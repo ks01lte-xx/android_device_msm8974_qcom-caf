@@ -117,7 +117,7 @@ struct aac_ipc_info *omx_aac_thread_create(
 
     aac_info->pipe_in = fds[0];
     aac_info->pipe_out = fds[1];
-   
+
     r = pthread_create(&aac_info->thr, 0, omx_aac_msg, aac_info);
     if (r < 0) goto fail_thread;
 
@@ -190,6 +190,7 @@ fail_pipe:
 
 void omx_aac_thread_stop(struct aac_ipc_info *aac_info) {
     DEBUG_DETAIL("%s stop server\n", __FUNCTION__);
+    aac_info->dead = 1;
     close(aac_info->pipe_in);
     close(aac_info->pipe_out);
     pthread_join(aac_info->thr,NULL);
@@ -202,6 +203,6 @@ void omx_aac_thread_stop(struct aac_ipc_info *aac_info) {
 
 void omx_aac_post_msg(struct aac_ipc_info *aac_info, unsigned char id) {
     DEBUG_DETAIL("\n%s id=%d\n", __FUNCTION__,id);
- 
+
     write(aac_info->pipe_out, &id, 1);
 }

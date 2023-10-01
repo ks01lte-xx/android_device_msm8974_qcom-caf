@@ -144,20 +144,34 @@ SIDE EFFECTS:
 =============================================================================*/
 void omx_evrc_aenc::wait_for_event()
 {
-    int               rc;
+    int               rc = 0;
     struct timespec   ts;
     pthread_mutex_lock(&m_event_lock);
     while (0 == m_is_event_done)
     {
-       clock_gettime(CLOCK_REALTIME, &ts);
+       clock_gettime(CLOCK_MONOTONIC, &ts);
        ts.tv_sec += (SLEEP_MS/1000);
        ts.tv_nsec += ((SLEEP_MS%1000) * 1000000);
+       if (ts.tv_nsec >= 1000000000)
+       {
+          ts.tv_nsec -= 1000000000;
+          ts.tv_sec += 1;
+       }
        rc = pthread_cond_timedwait(&cond, &m_event_lock, &ts);
        if (rc == ETIMEDOUT && !m_is_event_done) {
             DEBUG_PRINT("Timed out waiting for flush");
-            if (ioctl( m_drv_fd, AUDIO_FLUSH, 0) == -1)
-                DEBUG_PRINT_ERROR("Flush:Input port, ioctl flush failed %d\n",
-                    errno);
+         rc = ioctl(m_drv_fd, AUDIO_FLUSH, 0);
+         if (rc == -1)
+         {
+           DEBUG_PRINT_ERROR("Flush:Input port, ioctl flush failed: rc:%d, %s, no:%d \n",
+               rc, strerror(errno), errno);
+         }
+         else if (rc < 0)
+         {
+           DEBUG_PRINT_ERROR("Flush:Input port, ioctl failed error: rc:%d, %s, no:%d \n",
+               rc, strerror(errno), errno);
+           break;
+         }
        }
     }
     m_is_event_done = 0;
@@ -256,7 +270,10 @@ omx_evrc_aenc::omx_evrc_aenc(): m_tmp_meta_buf(NULL),
         m_tmp_out_meta_buf(NULL),
         m_flush_cnt(255),
         m_comp_deinit(0),
+        m_volume(25),
         m_app_data(NULL),
+        nNumInputBuf(0),
+        nNumOutputBuf(0),
         m_drv_fd(-1),
         bFlushinprogress(0),
         is_in_th_sleep(false),
@@ -267,7 +284,7 @@ omx_evrc_aenc::omx_evrc_aenc(): m_tmp_meta_buf(NULL),
         m_out_act_buf_count (OMX_CORE_NUM_OUTPUT_BUFFERS),
         m_inp_current_buf_count(0),
         m_out_current_buf_count(0),
-        output_buffer_size(OMX_EVRC_OUTPUT_BUFFER_SIZE),
+        output_buffer_size((OMX_U32)OMX_EVRC_OUTPUT_BUFFER_SIZE),
         input_buffer_size(OMX_CORE_INPUT_BUFFER_SIZE),
         m_inp_bEnabled(OMX_TRUE),
         m_out_bEnabled(OMX_TRUE),
@@ -277,12 +294,10 @@ omx_evrc_aenc::omx_evrc_aenc(): m_tmp_meta_buf(NULL),
         m_state(OMX_StateInvalid),
         m_ipc_to_in_th(NULL),
         m_ipc_to_out_th(NULL),
-        m_ipc_to_cmd_th(NULL),
-        nNumOutputBuf(0),
-        nNumInputBuf(0),
-        m_volume(25)
+        m_ipc_to_cmd_th(NULL)
 {
     int cond_ret = 0;
+    pthread_condattr_t attr;
     memset(&m_cmp, 0, sizeof(m_cmp));
     memset(&m_cb, 0, sizeof(m_cb));
     memset(&m_evrc_param, 0, sizeof(m_evrc_param));
@@ -328,7 +343,9 @@ omx_evrc_aenc::omx_evrc_aenc(): m_tmp_meta_buf(NULL),
 
     pthread_mutexattr_init(&in_buf_count_lock_attr);
     pthread_mutex_init(&in_buf_count_lock, &in_buf_count_lock_attr);
-    if ((cond_ret = pthread_cond_init (&cond, NULL)) != 0)
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    if ((cond_ret = pthread_cond_init (&cond, &attr)) != 0)
     {
        DEBUG_PRINT_ERROR("pthread_cond_init returns non zero for cond\n");
        if (cond_ret == EAGAIN)
@@ -925,7 +942,7 @@ loopback_in:
         pThis->get_state(&pThis->m_cmp, &state);
         pthread_mutex_unlock(&pThis->m_state_lock);
     }
-    else if ((state == OMX_StatePause))
+    else if (state == OMX_StatePause)
     {
         if(!(pThis->m_input_ctrl_cmd_q.m_size))
         {
@@ -1247,13 +1264,12 @@ OMX_ERRORTYPE  omx_evrc_aenc::get_component_version
 OMX_ERRORTYPE  omx_evrc_aenc::send_command(OMX_IN OMX_HANDLETYPE hComp,
                                            OMX_IN OMX_COMMANDTYPE  cmd,
                                            OMX_IN OMX_U32       param1,
-                                           OMX_IN OMX_PTR      cmdData)
+                                           OMX_IN OMX_PTR             )
 {
     int portIndex = (int)param1;
 
     if(hComp == NULL)
     {
-        cmdData = NULL;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -1287,7 +1303,7 @@ OMX_ERRORTYPE  omx_evrc_aenc::send_command(OMX_IN OMX_HANDLETYPE hComp,
 OMX_ERRORTYPE  omx_evrc_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
                                                  OMX_IN OMX_COMMANDTYPE  cmd,
                                                  OMX_IN OMX_U32       param1,
-                                                 OMX_IN OMX_PTR      cmdData)
+                                                 OMX_IN OMX_PTR             )
 {
     OMX_ERRORTYPE eRet = OMX_ErrorNone;
     //   Handle only IDLE and executing
@@ -1297,7 +1313,6 @@ OMX_ERRORTYPE  omx_evrc_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
 
     if(hComp == NULL)
     {
-        cmdData = NULL;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -1534,9 +1549,9 @@ OMX_ERRORTYPE  omx_evrc_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
             {
                 DEBUG_PRINT("SCP-->Executing to Idle \n");
                 if(pcm_input)
-                    execute_omx_flush(-1,false);
+                    execute_omx_flush(-1);
                 else
-                    execute_omx_flush(1,false);
+                    execute_omx_flush(1);
 
 
             } else if (OMX_StatePause == eState)
@@ -1610,9 +1625,9 @@ OMX_ERRORTYPE  omx_evrc_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
                 m_flush_cnt = 2;
                 pthread_mutex_unlock(&m_flush_lock);
                 if(pcm_input)
-                    execute_omx_flush(-1,false);
+                    execute_omx_flush(-1);
                 else
-                    execute_omx_flush(1,false);
+                    execute_omx_flush(1);
 
             } else if ( eState == OMX_StateLoaded )
             {
@@ -1732,7 +1747,7 @@ OMX_ERRORTYPE  omx_evrc_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
              param1 == OMX_CORE_OUTPUT_PORT_INDEX ||
             (signed)param1 == -1 )
         {
-            execute_omx_flush(param1);
+            execute_omx_flush(param1,true);
         } else
         {
             eRet = OMX_ErrorBadPortIndex;
@@ -3031,7 +3046,7 @@ OMX_ERRORTYPE  omx_evrc_aenc::set_config(OMX_IN OMX_HANDLETYPE      hComp,
     {
         case OMX_IndexConfigAudioVolume:
             {
-                OMX_AUDIO_CONFIG_VOLUMETYPE *vol = 
+                OMX_AUDIO_CONFIG_VOLUMETYPE *vol =
 			(OMX_AUDIO_CONFIG_VOLUMETYPE*)configData;
                 if (vol->nPortIndex == OMX_CORE_INPUT_PORT_INDEX)
                 {
@@ -3173,17 +3188,15 @@ RETURN VALUE
 OMX_ERRORTYPE  omx_evrc_aenc::component_tunnel_request
 (
     OMX_IN OMX_HANDLETYPE                hComp,
-    OMX_IN OMX_U32                        port,
+    OMX_IN OMX_U32                            ,
     OMX_IN OMX_HANDLETYPE        peerComponent,
-    OMX_IN OMX_U32                    peerPort,
+    OMX_IN OMX_U32                            ,
     OMX_INOUT OMX_TUNNELSETUPTYPE* tunnelSetup)
 {
     DEBUG_PRINT_ERROR("Error: component_tunnel_request Not Implemented\n");
 
     if((hComp == NULL) || (peerComponent == NULL) || (tunnelSetup == NULL))
     {
-        port = 0;
-        peerPort = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -3208,7 +3221,7 @@ OMX_ERRORTYPE  omx_evrc_aenc::allocate_input_buffer
 (
     OMX_IN OMX_HANDLETYPE                hComp,
     OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                        port,
+    OMX_IN OMX_U32                            ,
     OMX_IN OMX_PTR                     appData,
     OMX_IN OMX_U32                       bytes)
 {
@@ -3223,7 +3236,6 @@ OMX_ERRORTYPE  omx_evrc_aenc::allocate_input_buffer
 
     if(hComp == NULL)
     {
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         free(buf_ptr);
         return OMX_ErrorBadParameter;
@@ -3266,7 +3278,7 @@ OMX_ERRORTYPE  omx_evrc_aenc::allocate_output_buffer
 (
     OMX_IN OMX_HANDLETYPE                hComp,
     OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                        port,
+    OMX_IN OMX_U32                            ,
     OMX_IN OMX_PTR                     appData,
     OMX_IN OMX_U32                       bytes)
 {
@@ -3277,7 +3289,6 @@ OMX_ERRORTYPE  omx_evrc_aenc::allocate_output_buffer
 
     if(hComp == NULL)
     {
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -3546,7 +3557,7 @@ OMX_ERRORTYPE  omx_evrc_aenc::use_input_buffer
 (
     OMX_IN OMX_HANDLETYPE            hComp,
     OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                   port,
+    OMX_IN OMX_U32                   ,
     OMX_IN OMX_PTR                   appData,
     OMX_IN OMX_U32                   bytes,
     OMX_IN OMX_U8*                   buffer)
@@ -3558,7 +3569,6 @@ OMX_ERRORTYPE  omx_evrc_aenc::use_input_buffer
 
     if(hComp == NULL)
     {
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -3631,7 +3641,7 @@ OMX_ERRORTYPE  omx_evrc_aenc::use_output_buffer
 (
     OMX_IN OMX_HANDLETYPE            hComp,
     OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                   port,
+    OMX_IN OMX_U32                   ,
     OMX_IN OMX_PTR                   appData,
     OMX_IN OMX_U32                   bytes,
     OMX_IN OMX_U8*                   buffer)
@@ -3643,7 +3653,6 @@ OMX_ERRORTYPE  omx_evrc_aenc::use_output_buffer
 
     if(hComp == NULL)
     {
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -4261,9 +4270,9 @@ void  omx_evrc_aenc::deinit_encoder()
                                                                 m_state);
         // Get back any buffers from driver
         if(pcm_input)
-            execute_omx_flush(-1,false);
+            execute_omx_flush(-1);
         else
-            execute_omx_flush(1,false);
+            execute_omx_flush(1);
         // force state change to loaded so that all threads can be exited
         pthread_mutex_lock(&m_state_lock);
         m_state = OMX_StateLoaded;
@@ -4380,8 +4389,8 @@ RETURN VALUE
 OMX_ERRORTYPE  omx_evrc_aenc::use_EGL_image
 (
     OMX_IN OMX_HANDLETYPE                hComp,
-    OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                        port,
+    OMX_INOUT OMX_BUFFERHEADERTYPE**          ,
+    OMX_IN OMX_U32                            ,
     OMX_IN OMX_PTR                     appData,
     OMX_IN void*                      eglImage)
 {
@@ -4389,8 +4398,6 @@ OMX_ERRORTYPE  omx_evrc_aenc::use_EGL_image
 
     if((hComp == NULL) || (appData == NULL) || (eglImage == NULL))
     {
-        bufferHdr = NULL;
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }

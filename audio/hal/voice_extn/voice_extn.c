@@ -24,7 +24,7 @@
 #include <errno.h>
 #include <math.h>
 #include <time.h>
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/str_parms.h>
 #include <sys/ioctl.h>
 #include <sound/voice_params.h>
@@ -73,7 +73,7 @@ struct pcm_config pcm_config_incall_music = {
 
 extern int start_call(struct audio_device *adev, audio_usecase_t usecase_id);
 extern int stop_call(struct audio_device *adev, audio_usecase_t usecase_id);
-int voice_extn_is_call_state_active(struct audio_device *adev, bool *is_call_active);
+int voice_extn_is_call_state_active(struct audio_device *adev __unused, bool *is_call_active __unused);
 
 static bool is_valid_call_state(int call_state)
 {
@@ -338,19 +338,6 @@ int voice_extn_is_call_state_active(struct audio_device *adev, bool *is_call_act
             *is_call_active = true;
             break;
         }
-    }
-
-    return 0;
-}
-
-int voice_extn_is_in_call_rec_stream(struct stream_in *in, bool *in_call_rec)
-{
-    *in_call_rec = false;
-
-    if(in->source == AUDIO_SOURCE_VOICE_DOWNLINK ||
-       in->source == AUDIO_SOURCE_VOICE_UPLINK ||
-       in->source == AUDIO_SOURCE_VOICE_CALL) {
-       *in_call_rec = true;
     }
 
     return 0;

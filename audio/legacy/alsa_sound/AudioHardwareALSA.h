@@ -398,7 +398,7 @@ public:
     {
         return BAD_VALUE;
     }
-   
+
     virtual status_t removeAudioEffect(effect_handle_t effect)
     {
         return BAD_VALUE;

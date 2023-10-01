@@ -38,7 +38,7 @@
 #include <sys/prctl.h>
 #include <sys/ioctl.h>
 
-#include <cutils/log.h>
+#include <log/log.h>
 #include <cutils/str_parms.h>
 #include <cutils/properties.h>
 #include <cutils/atomic.h>
@@ -3478,10 +3478,6 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     in->format = config->format;
 
     if (in->device == AUDIO_DEVICE_IN_TELEPHONY_RX) {
-        if (adev->mode != AUDIO_MODE_IN_CALL) {
-            ret = -EINVAL;
-            goto err_open;
-        }
         if (config->sample_rate == 0)
             config->sample_rate = AFE_PROXY_SAMPLING_RATE;
         if (config->sample_rate != 48000 && config->sample_rate != 16000 &&
@@ -3523,13 +3519,6 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
                                             channel_count,
                                             is_low_latency);
         in->config.period_size = buffer_size / frame_size;
-        if ((in->source == AUDIO_SOURCE_VOICE_COMMUNICATION) &&
-               (in->dev->mode == AUDIO_MODE_IN_COMMUNICATION) &&
-               (voice_extn_compress_voip_is_format_supported(in->format)) &&
-               (in->config.rate == 8000 || in->config.rate == 16000) &&
-               (audio_channel_count_from_in_mask(in->channel_mask) == 1)) {
-            voice_extn_compress_voip_open_input_stream(in);
-        }
     }
 
     *stream_in = &in->stream;

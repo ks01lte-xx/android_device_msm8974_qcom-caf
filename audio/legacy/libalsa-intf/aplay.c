@@ -654,7 +654,7 @@ int main(int argc, char **argv)
     }
 
     if (pcm_flag) {
-	 if (format == SNDRV_PCM_FORMAT_S16_LE) 
+	 if (format == SNDRV_PCM_FORMAT_S16_LE)
              rc = play_wav(mmap, rate, ch, device, filename);
          else
              rc = play_raw(mmap, rate, ch, device, filename);

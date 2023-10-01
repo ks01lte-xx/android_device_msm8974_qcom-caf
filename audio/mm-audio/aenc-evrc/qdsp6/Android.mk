@@ -17,6 +17,7 @@ ifeq ($(strip $(TARGET_USES_QCOM_MM_AUDIO)),true)
 libOmxEvrcEnc-def += -DAUDIOV2
 endif
 
+libOmxEvrcEnc-def += -Wno-sign-conversion -Wno-shorten-64-to-32 -Wno-self-assign -Wno-parentheses-equality -Wno-format -Wno-sign-compare -Wno-tautological-compare -Wno-shorten-64-to-32 -Wno-unused-local-typedef
 # ---------------------------------------------------------------------------------
 #             Make the Shared library (libOmxEvrcEnc)
 # ---------------------------------------------------------------------------------
@@ -31,9 +32,7 @@ LOCAL_VENDOR_MODULE     := true
 LOCAL_CFLAGS            := $(libOmxEvrcEnc-def)
 LOCAL_CFLAGS            += -Wno-error
 LOCAL_C_INCLUDES        := $(libOmxEvrcEnc-inc)
-LOCAL_PRELINK_MODULE    := false
 LOCAL_SHARED_LIBRARIES  := libutils liblog
-
 LOCAL_SRC_FILES         := src/aenc_svr.c
 LOCAL_SRC_FILES         += src/omx_evrc_aenc.cpp
 

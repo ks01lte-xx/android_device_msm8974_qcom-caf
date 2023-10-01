@@ -190,6 +190,7 @@ fail_pipe:
 
 void omx_evrc_thread_stop(struct evrc_ipc_info *evrc_info) {
     DEBUG_DETAIL("%s stop server\n", __FUNCTION__);
+    evrc_info->dead = 1;
     close(evrc_info->pipe_in);
     close(evrc_info->pipe_out);
     pthread_join(evrc_info->thr,NULL);

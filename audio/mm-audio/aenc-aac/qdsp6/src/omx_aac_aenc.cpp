@@ -145,20 +145,34 @@ SIDE EFFECTS:
 =============================================================================*/
 void omx_aac_aenc::wait_for_event()
 {
-    int               rc;
+    int               rc = 0;
     struct timespec   ts;
     pthread_mutex_lock(&m_event_lock);
     while (0 == m_is_event_done)
     {
-       clock_gettime(CLOCK_REALTIME, &ts);
+       clock_gettime(CLOCK_MONOTONIC, &ts);
        ts.tv_sec += (SLEEP_MS/1000);
        ts.tv_nsec += ((SLEEP_MS%1000) * 1000000);
+       if (ts.tv_nsec >= 1000000000)
+       {
+          ts.tv_nsec -= 1000000000;
+          ts.tv_sec += 1;
+       }
        rc = pthread_cond_timedwait(&cond, &m_event_lock, &ts);
        if (rc == ETIMEDOUT && !m_is_event_done) {
             DEBUG_PRINT("Timed out waiting for flush");
-            if (ioctl( m_drv_fd, AUDIO_FLUSH, 0) == -1)
-                DEBUG_PRINT_ERROR("Flush:Input port, ioctl flush failed %d\n",
-                    errno);
+         rc = ioctl(m_drv_fd, AUDIO_FLUSH, 0);
+         if (rc == -1)
+         {
+           DEBUG_PRINT_ERROR("Flush:Input port, ioctl flush failed: rc:%d, %s, no:%d \n",
+              rc, strerror(errno), errno);
+         }
+         else if (rc < 0)
+         {
+           DEBUG_PRINT_ERROR("Flush:Input port, ioctl failed error: rc:%d, %s, no:%d \n",
+               rc, strerror(errno), errno);
+           break;
+         }
        }
     }
     m_is_event_done = 0;
@@ -260,6 +274,7 @@ omx_aac_aenc::omx_aac_aenc(): m_tmp_meta_buf(NULL),
         adif_flag(0),
         mp4ff_flag(0),
         m_app_data(NULL),
+        nNumOutputBuf(0),
         m_drv_fd(-1),
         bFlushinprogress(0),
         is_in_th_sleep(false),
@@ -272,8 +287,9 @@ omx_aac_aenc::omx_aac_aenc(): m_tmp_meta_buf(NULL),
         m_out_act_buf_count (OMX_CORE_NUM_OUTPUT_BUFFERS),
         m_inp_current_buf_count(0),
         m_out_current_buf_count(0),
-        output_buffer_size(OMX_AAC_OUTPUT_BUFFER_SIZE),
+        output_buffer_size((OMX_U32)OMX_AAC_OUTPUT_BUFFER_SIZE),
         input_buffer_size(OMX_CORE_INPUT_BUFFER_SIZE),
+        m_session_id(0),
         m_inp_bEnabled(OMX_TRUE),
         m_out_bEnabled(OMX_TRUE),
         m_inp_bPopulated(OMX_FALSE),
@@ -282,12 +298,11 @@ omx_aac_aenc::omx_aac_aenc(): m_tmp_meta_buf(NULL),
         m_state(OMX_StateInvalid),
         m_ipc_to_in_th(NULL),
         m_ipc_to_out_th(NULL),
-        m_ipc_to_cmd_th(NULL),
-        nNumOutputBuf(0),
-        m_session_id(0)
+        m_ipc_to_cmd_th(NULL)
 {
     int cond_ret = 0;
     component_Role.nSize = 0;
+    pthread_condattr_t attr;
     memset(&m_cmp, 0, sizeof(m_cmp));
     memset(&m_cb, 0, sizeof(m_cb));
     memset(&m_aac_pb_stats, 0, sizeof(m_aac_pb_stats));
@@ -333,7 +348,9 @@ omx_aac_aenc::omx_aac_aenc(): m_tmp_meta_buf(NULL),
 
     pthread_mutexattr_init(&in_buf_count_lock_attr);
     pthread_mutex_init(&in_buf_count_lock, &in_buf_count_lock_attr);
-    if ((cond_ret = pthread_cond_init (&cond, NULL)) != 0)
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    if ((cond_ret = pthread_cond_init (&cond, &attr)) != 0)
     {
        DEBUG_PRINT_ERROR("pthread_cond_init returns non zero for cond\n");
        if (cond_ret == EAGAIN)
@@ -930,7 +947,7 @@ loopback_in:
         pThis->get_state(&pThis->m_cmp, &state);
         pthread_mutex_unlock(&pThis->m_state_lock);
     }
-    else if ((state == OMX_StatePause))
+    else if (state == OMX_StatePause)
     {
         if(!(pThis->m_input_ctrl_cmd_q.m_size))
         {
@@ -1251,13 +1268,12 @@ OMX_ERRORTYPE  omx_aac_aenc::get_component_version
 OMX_ERRORTYPE  omx_aac_aenc::send_command(OMX_IN OMX_HANDLETYPE hComp,
                                            OMX_IN OMX_COMMANDTYPE  cmd,
                                            OMX_IN OMX_U32       param1,
-                                           OMX_IN OMX_PTR      cmdData)
+                                           OMX_IN OMX_PTR             )
 {
     int portIndex = (int)param1;
 
     if(hComp == NULL)
     {
-        cmdData = NULL;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -1291,7 +1307,7 @@ OMX_ERRORTYPE  omx_aac_aenc::send_command(OMX_IN OMX_HANDLETYPE hComp,
 OMX_ERRORTYPE  omx_aac_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
                                                  OMX_IN OMX_COMMANDTYPE  cmd,
                                                  OMX_IN OMX_U32       param1,
-                                                 OMX_IN OMX_PTR      cmdData)
+                                                 OMX_IN OMX_PTR             )
 {
     OMX_ERRORTYPE eRet = OMX_ErrorNone;
     //   Handle only IDLE and executing
@@ -1301,7 +1317,6 @@ OMX_ERRORTYPE  omx_aac_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
 
     if(hComp == NULL)
     {
-        cmdData = NULL;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -1399,7 +1414,7 @@ OMX_ERRORTYPE  omx_aac_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
 					stop failed %d\n", errno);
                     }
                     nTimestamp=0;
-                    ts = 0; 
+                    ts = 0;
                     frameduration = 0;
                     DEBUG_PRINT("SCP-->Idle to Loaded\n");
                 } else
@@ -1619,9 +1634,9 @@ OMX_ERRORTYPE  omx_aac_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
             {
                 DEBUG_PRINT("SCP-->Executing to Idle \n");
                 if(pcm_input)
-                    execute_omx_flush(-1,false);
+                    execute_omx_flush(-1);
                 else
-                    execute_omx_flush(1,false);
+                    execute_omx_flush(1);
 
 
             } else if (OMX_StatePause == eState)
@@ -1695,9 +1710,9 @@ OMX_ERRORTYPE  omx_aac_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
                 m_flush_cnt = 2;
                 pthread_mutex_unlock(&m_flush_lock);
                 if(pcm_input)
-                    execute_omx_flush(-1,false);
+                    execute_omx_flush(-1);
                 else
-                    execute_omx_flush(1,false);
+                    execute_omx_flush(1);
 
             } else if ( eState == OMX_StateLoaded )
             {
@@ -1817,7 +1832,7 @@ OMX_ERRORTYPE  omx_aac_aenc::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
              param1 == OMX_CORE_OUTPUT_PORT_INDEX ||
             (signed)param1 == -1 )
         {
-            execute_omx_flush(param1);
+            execute_omx_flush(param1,true);
         } else
         {
             eRet = OMX_ErrorBadPortIndex;
@@ -2050,7 +2065,7 @@ bool omx_aac_aenc::execute_omx_flush(OMX_IN OMX_U32 param1, bool cmd_cmpl)
         DEBUG_PRINT("RECIEVED BOTH FLUSH ACK's param1=%lu cmd_cmpl=%d",\
                     param1,cmd_cmpl);
 
-        // If not going to idle state, Send FLUSH complete message 
+        // If not going to idle state, Send FLUSH complete message
 	// to the Client, now that FLUSH ACK's have been recieved.
         if (cmd_cmpl)
         {
@@ -2837,7 +2852,7 @@ OMX_ERRORTYPE  omx_aac_aenc::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                 if (((m_state == OMX_StateLoaded)&&
                      !BITMASK_PRESENT(&m_flags,OMX_COMPONENT_IDLE_PENDING))
                     || (m_state == OMX_StateWaitForResources &&
-                        ((OMX_DirInput == portDefn->eDir && 
+                        ((OMX_DirInput == portDefn->eDir &&
 				m_inp_bEnabled == true)||
                          (OMX_DirInput == portDefn->eDir &&
 				m_out_bEnabled == true)))
@@ -2954,7 +2969,7 @@ OMX_ERRORTYPE  omx_aac_aenc::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
 				bufferSupplierType->eBufferSupplier;
                 } else
                 {
-                    DEBUG_PRINT_ERROR("set_param:IndexParamCompBufferSup \ 
+                    DEBUG_PRINT_ERROR("set_param:IndexParamCompBufferSup \
 					%08x\n", eRet);
                     eRet = OMX_ErrorBadPortIndex;
                 }
@@ -3270,17 +3285,15 @@ RETURN VALUE
 OMX_ERRORTYPE  omx_aac_aenc::component_tunnel_request
 (
     OMX_IN OMX_HANDLETYPE                hComp,
-    OMX_IN OMX_U32                        port,
+    OMX_IN OMX_U32                            ,
     OMX_IN OMX_HANDLETYPE        peerComponent,
-    OMX_IN OMX_U32                    peerPort,
+    OMX_IN OMX_U32                            ,
     OMX_INOUT OMX_TUNNELSETUPTYPE* tunnelSetup)
 {
     DEBUG_PRINT_ERROR("Error: component_tunnel_request Not Implemented\n");
 
     if((hComp == NULL) || (peerComponent == NULL) || (tunnelSetup == NULL))
     {
-        port = 0;
-        peerPort = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -3305,7 +3318,7 @@ OMX_ERRORTYPE  omx_aac_aenc::allocate_input_buffer
 (
     OMX_IN OMX_HANDLETYPE                hComp,
     OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                        port,
+    OMX_IN OMX_U32                            ,
     OMX_IN OMX_PTR                     appData,
     OMX_IN OMX_U32                       bytes)
 {
@@ -3320,7 +3333,6 @@ OMX_ERRORTYPE  omx_aac_aenc::allocate_input_buffer
 
     if(hComp == NULL)
     {
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         free(buf_ptr);
         return OMX_ErrorBadParameter;
@@ -3363,7 +3375,7 @@ OMX_ERRORTYPE  omx_aac_aenc::allocate_output_buffer
 (
     OMX_IN OMX_HANDLETYPE                hComp,
     OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                        port,
+    OMX_IN OMX_U32                            ,
     OMX_IN OMX_PTR                     appData,
     OMX_IN OMX_U32                       bytes)
 {
@@ -3374,7 +3386,6 @@ OMX_ERRORTYPE  omx_aac_aenc::allocate_output_buffer
 
     if(hComp == NULL)
     {
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -3644,7 +3655,7 @@ OMX_ERRORTYPE  omx_aac_aenc::use_input_buffer
 (
     OMX_IN OMX_HANDLETYPE            hComp,
     OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                   port,
+    OMX_IN OMX_U32                   ,
     OMX_IN OMX_PTR                   appData,
     OMX_IN OMX_U32                   bytes,
     OMX_IN OMX_U8*                   buffer)
@@ -3656,7 +3667,6 @@ OMX_ERRORTYPE  omx_aac_aenc::use_input_buffer
 
     if(hComp == NULL)
     {
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -3729,7 +3739,7 @@ OMX_ERRORTYPE  omx_aac_aenc::use_output_buffer
 (
     OMX_IN OMX_HANDLETYPE            hComp,
     OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                   port,
+    OMX_IN OMX_U32                   ,
     OMX_IN OMX_PTR                   appData,
     OMX_IN OMX_U32                   bytes,
     OMX_IN OMX_U8*                   buffer)
@@ -3741,7 +3751,6 @@ OMX_ERRORTYPE  omx_aac_aenc::use_output_buffer
 
     if(hComp == NULL)
     {
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -4431,9 +4440,9 @@ void  omx_aac_aenc::deinit_encoder()
                                                                 m_state);
         // Get back any buffers from driver
         if(pcm_input)
-            execute_omx_flush(-1,false);
+            execute_omx_flush(-1);
         else
-            execute_omx_flush(1,false);
+            execute_omx_flush(1);
         // force state change to loaded so that all threads can be exited
         pthread_mutex_lock(&m_state_lock);
         m_state = OMX_StateLoaded;
@@ -4552,8 +4561,8 @@ RETURN VALUE
 OMX_ERRORTYPE  omx_aac_aenc::use_EGL_image
 (
     OMX_IN OMX_HANDLETYPE                hComp,
-    OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-    OMX_IN OMX_U32                        port,
+    OMX_INOUT OMX_BUFFERHEADERTYPE**          ,
+    OMX_IN OMX_U32                            ,
     OMX_IN OMX_PTR                     appData,
     OMX_IN void*                      eglImage)
 {
@@ -4561,8 +4570,6 @@ OMX_ERRORTYPE  omx_aac_aenc::use_EGL_image
 
     if((hComp == NULL) || (appData == NULL) || (eglImage == NULL))
     {
-        bufferHdr = NULL;
-        port = 0;
         DEBUG_PRINT_ERROR("Returning OMX_ErrorBadParameter\n");
         return OMX_ErrorBadParameter;
     }
@@ -4709,7 +4716,7 @@ void  omx_aac_aenc::audaac_rec_install_adif_header_variable (OMX_U16  byte_num,
   OMX_U8   buf8;
   OMX_U32  value;
   OMX_U32  dummy = 0;
-  OMX_U8    num_pfe, num_fce, num_sce, num_bce; 
+  OMX_U8    num_pfe, num_fce, num_sce, num_bce;
   OMX_U8    num_lfe, num_ade, num_vce, num_com;
   OMX_U8    pfe_index;
   OMX_U8    i;
@@ -4717,7 +4724,7 @@ void  omx_aac_aenc::audaac_rec_install_adif_header_variable (OMX_U16  byte_num,
 
   (void)byte_num;
   (void)channel_config;
-  num_pfe = num_sce = num_bce = 
+  num_pfe = num_sce = num_bce =
   num_lfe = num_ade = num_vce = num_com = 0;
   audaac_hdr_bit_index = 32;
   num_fce = 1;
@@ -4726,15 +4733,15 @@ void  omx_aac_aenc::audaac_rec_install_adif_header_variable (OMX_U16  byte_num,
 
   /* copyright_id_present field, 1 bit */
   value = 0;
-  audaac_rec_install_bits(audaac_header_adif, 
-                          AAC_COPYRIGHT_PRESENT_SIZE, 
+  audaac_rec_install_bits(audaac_header_adif,
+                          AAC_COPYRIGHT_PRESENT_SIZE,
                           value,
                           &(audaac_hdr_bit_index));
 
   if (value) {
     /* Copyright present, 72 bits; skip it for now,
      * just install dummy value */
-    audaac_rec_install_bits(audaac_header_adif, 
+    audaac_rec_install_bits(audaac_header_adif,
                             72,
                             dummy,
                             &(audaac_hdr_bit_index));
@@ -4750,7 +4757,7 @@ void  omx_aac_aenc::audaac_rec_install_adif_header_variable (OMX_U16  byte_num,
   /* home field, 1 bit */
   value = 0;
   audaac_rec_install_bits(audaac_header_adif,
-                          AAC_HOME_SIZE, 
+                          AAC_HOME_SIZE,
                           0,
                           &(audaac_hdr_bit_index));
 
@@ -4763,14 +4770,14 @@ void  omx_aac_aenc::audaac_rec_install_adif_header_variable (OMX_U16  byte_num,
 
   /* bit_rate field, 23 bits */
   audaac_rec_install_bits(audaac_header_adif,
-                          AAC_BITRATE_SIZE, 
+                          AAC_BITRATE_SIZE,
                           (OMX_U32)m_aac_param.nBitRate,
                           &(audaac_hdr_bit_index));
 
   /* num_program_config_elements, 4 bits */
   num_pfe = 0;
   audaac_rec_install_bits(audaac_header_adif,
-                          AAC_NUM_PFE_SIZE, 
+                          AAC_NUM_PFE_SIZE,
                           (OMX_U32)num_pfe,
                           &(audaac_hdr_bit_index));
 
@@ -4781,8 +4788,8 @@ void  omx_aac_aenc::audaac_rec_install_adif_header_variable (OMX_U16  byte_num,
 
      if (variable_bit_rate == OMX_FALSE) {
 	/* impossible, put dummy value for now */
-       audaac_rec_install_bits(audaac_header_adif, 
-                               AAC_BUFFER_FULLNESS_SIZE, 
+       audaac_rec_install_bits(audaac_header_adif,
+                               AAC_BUFFER_FULLNESS_SIZE,
                                0,
                                &(audaac_hdr_bit_index));
 
@@ -4792,7 +4799,7 @@ void  omx_aac_aenc::audaac_rec_install_adif_header_variable (OMX_U16  byte_num,
 
     /* element_instance_tag field, 4 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_ELEMENT_INSTANCE_TAG_SIZE, 
+                            AAC_ELEMENT_INSTANCE_TAG_SIZE,
                             dummy,
                             &(audaac_hdr_bit_index));
 
@@ -4805,126 +4812,126 @@ void  omx_aac_aenc::audaac_rec_install_adif_header_variable (OMX_U16  byte_num,
 
     /* sampling_frequency_index, 4 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_SAMPLING_FREQ_INDEX_SIZE, 
+                            AAC_SAMPLING_FREQ_INDEX_SIZE,
                             (OMX_U32)sample_index,
                             &(audaac_hdr_bit_index));
 
     /* num_front_channel_elements, 4 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_NUM_FRONT_CHANNEL_ELEMENTS_SIZE, 
+                            AAC_NUM_FRONT_CHANNEL_ELEMENTS_SIZE,
                             num_fce,
                             &(audaac_hdr_bit_index));
 
     /* num_side_channel_elements, 4 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_NUM_SIDE_CHANNEL_ELEMENTS_SIZE, 
+                            AAC_NUM_SIDE_CHANNEL_ELEMENTS_SIZE,
                             dummy,
                             &(audaac_hdr_bit_index));
 
     /* num_back_channel_elements, 4 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_NUM_BACK_CHANNEL_ELEMENTS_SIZE, 
+                            AAC_NUM_BACK_CHANNEL_ELEMENTS_SIZE,
                             dummy,
                             &(audaac_hdr_bit_index));
 
     /* num_lfe_channel_elements, 2 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_NUM_LFE_CHANNEL_ELEMENTS_SIZE, 
+                            AAC_NUM_LFE_CHANNEL_ELEMENTS_SIZE,
                             dummy,
                             &(audaac_hdr_bit_index));
 
     /* num_assoc_data_elements, 3 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_NUM_ASSOC_DATA_ELEMENTS_SIZE, 
+                            AAC_NUM_ASSOC_DATA_ELEMENTS_SIZE,
                             num_ade,
                             &(audaac_hdr_bit_index));
 
     /* num_valid_cc_elements, 4 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_NUM_VALID_CC_ELEMENTS_SIZE, 
+                            AAC_NUM_VALID_CC_ELEMENTS_SIZE,
                             num_vce,
                             &(audaac_hdr_bit_index));
 
     /* mono_mixdown_present, 1 bits */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_MONO_MIXDOWN_PRESENT_SIZE, 
+                            AAC_MONO_MIXDOWN_PRESENT_SIZE,
                             dummy,
                             &(audaac_hdr_bit_index));
 
     if (dummy) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_MONO_MIXDOWN_ELEMENT_SIZE, 
+                              AAC_MONO_MIXDOWN_ELEMENT_SIZE,
                               dummy,
                               &(audaac_hdr_bit_index));
     }
-   
+
     /* stereo_mixdown_present */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_STEREO_MIXDOWN_PRESENT_SIZE, 
+                            AAC_STEREO_MIXDOWN_PRESENT_SIZE,
                             dummy,
                             &(audaac_hdr_bit_index));
 
     if (dummy) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_STEREO_MIXDOWN_ELEMENT_SIZE, 
+                              AAC_STEREO_MIXDOWN_ELEMENT_SIZE,
                               dummy,
                               &(audaac_hdr_bit_index));
     }
 
     /* matrix_mixdown_idx_present, 1 bit */
     audaac_rec_install_bits(audaac_header_adif,
-                            AAC_MATRIX_MIXDOWN_PRESENT_SIZE, 
+                            AAC_MATRIX_MIXDOWN_PRESENT_SIZE,
                             dummy,
                             &(audaac_hdr_bit_index));
 
     if (dummy) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_MATRIX_MIXDOWN_SIZE, 
+                              AAC_MATRIX_MIXDOWN_SIZE,
                               dummy,
                               &(audaac_hdr_bit_index));
     }
     if(m_aac_param.nChannels  == 2)
         value = 16;
     else
-        value = 0; 
+        value = 0;
     for (i=0; i<num_fce; i++) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_FCE_SIZE, 
+                              AAC_FCE_SIZE,
                               value,
                               &(audaac_hdr_bit_index));
     }
-    
+
     for (i=0; i<num_sce; i++) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_SCE_SIZE, 
+                              AAC_SCE_SIZE,
                               dummy,
                               &(audaac_hdr_bit_index));
     }
 
     for (i=0; i<num_bce; i++) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_BCE_SIZE, 
+                              AAC_BCE_SIZE,
                               dummy,
                               &(audaac_hdr_bit_index));
     }
 
     for (i=0; i<num_lfe; i++) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_LFE_SIZE, 
+                              AAC_LFE_SIZE,
                               dummy,
                               &(audaac_hdr_bit_index));
     }
 
     for (i=0; i<num_ade; i++) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_ADE_SIZE, 
+                              AAC_ADE_SIZE,
                               dummy,
                               &(audaac_hdr_bit_index));
     }
 
     for (i=0; i<num_vce; i++) {
       audaac_rec_install_bits(audaac_header_adif,
-                              AAC_VCE_SIZE, 
+                              AAC_VCE_SIZE,
                               dummy,
                               &(audaac_hdr_bit_index));
     }

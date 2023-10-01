@@ -295,7 +295,7 @@ static int ap_set_effect_enabled(struct audio_policy *pol, int id, bool enabled)
     return qap->apm->setEffectEnabled(id, enabled);
 }
 
-static bool ap_is_stream_active(const struct audio_policy *pol, 
+static bool ap_is_stream_active(const struct audio_policy *pol,
                                 audio_stream_type_t stream,
                                 uint32_t in_past_ms)
 {

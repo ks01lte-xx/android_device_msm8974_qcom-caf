@@ -190,6 +190,7 @@ fail_pipe:
 
 void omx_amr_thread_stop(struct amr_ipc_info *amr_info) {
     DEBUG_DETAIL("%s stop server\n", __FUNCTION__);
+    amr_info->dead = 1;
     close(amr_info->pipe_in);
     close(amr_info->pipe_out);
     pthread_join(amr_info->thr,NULL);
