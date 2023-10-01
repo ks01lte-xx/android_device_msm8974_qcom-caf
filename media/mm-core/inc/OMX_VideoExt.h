@@ -109,6 +109,22 @@ typedef struct OMX_VIDEO_VP8REFERENCEFRAMEINFOTYPE {
 } OMX_VIDEO_VP8REFERENCEFRAMEINFOTYPE;
 
 
+/**
+ * Structure for configuring video compression intra refresh period
+ *
+ * STRUCT MEMBERS:
+ *  nSize               : Size of the structure in bytes
+ *  nVersion            : OMX specification version information
+ *  nPortIndex          : Port that this structure applies to
+ *  nRefreshPeriod      : Intra refreh period in frames. Value 0 means disable intra refresh
+*/
+typedef struct OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE {
+    OMX_U32 nSize;
+    OMX_VERSIONTYPE nVersion;
+    OMX_U32 nPortIndex;
+    OMX_U32 nRefreshPeriod;
+} OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE;
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

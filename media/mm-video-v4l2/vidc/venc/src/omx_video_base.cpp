@@ -211,10 +211,10 @@ VideoHeap::VideoHeap(int fd, size_t size, void* base)
    None.
    ========================================================================== */
 omx_video::omx_video():
-    secure_session(false),
     c2d_opened(false),
     psource_frame(NULL),
     pdest_frame(NULL),
+    secure_session(false),
     mEmptyEosBuffer(NULL),
     m_pipe_in(-1),
     m_pipe_out(-1),
@@ -658,11 +658,11 @@ void omx_video::process_event_cb(void *ctxt, unsigned char id)
    ========================================================================== */
 OMX_ERRORTYPE  omx_video::get_component_version
 (
- OMX_IN OMX_HANDLETYPE hComp,
- OMX_OUT OMX_STRING componentName,
- OMX_OUT OMX_VERSIONTYPE* componentVersion,
+ OMX_IN OMX_HANDLETYPE hComp __unused,
+ OMX_OUT OMX_STRING componentName __unused,
+ OMX_OUT OMX_VERSIONTYPE* componentVersion __unused,
  OMX_OUT OMX_VERSIONTYPE* specVersion,
- OMX_OUT OMX_UUIDTYPE* componentUUID
+ OMX_OUT OMX_UUIDTYPE* componentUUID __unused
  )
 {
     if (m_state == OMX_StateInvalid) {
@@ -689,7 +689,7 @@ OMX_ERRORTYPE  omx_video::get_component_version
    true/false
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::send_command(OMX_IN OMX_HANDLETYPE hComp,
+OMX_ERRORTYPE  omx_video::send_command(OMX_IN OMX_HANDLETYPE hComp __unused,
         OMX_IN OMX_COMMANDTYPE cmd,
         OMX_IN OMX_U32 param1,
         OMX_IN OMX_PTR cmdData
@@ -736,10 +736,10 @@ OMX_ERRORTYPE  omx_video::send_command(OMX_IN OMX_HANDLETYPE hComp,
    true/false
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
+OMX_ERRORTYPE  omx_video::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp __unused,
         OMX_IN OMX_COMMANDTYPE cmd,
         OMX_IN OMX_U32 param1,
-        OMX_IN OMX_PTR cmdData
+        OMX_IN OMX_PTR cmdData __unused
         )
 {
     OMX_ERRORTYPE eRet = OMX_ErrorNone;
@@ -1043,10 +1043,10 @@ OMX_ERRORTYPE  omx_video::send_command_proxy(OMX_IN OMX_HANDLETYPE hComp,
     /* Current State is Invalid */
     /*******************************/
     else if (m_state == OMX_StateInvalid) {
-        /* State Transition from Inavlid to any state */
-        if (eState == (OMX_StateLoaded || OMX_StateWaitForResources
-                    || OMX_StateIdle || OMX_StateExecuting
-                    || OMX_StatePause || OMX_StateInvalid)) {
+        /* State Transition from Invalid to any state */
+        if(eState == OMX_StateLoaded || eState == OMX_StateWaitForResources ||
+            eState == OMX_StateIdle || eState == OMX_StateExecuting ||
+            eState == OMX_StatePause || eState == OMX_StateInvalid) {
             DEBUG_PRINT_ERROR("ERROR: OMXCORE-SM: Invalid -->Loaded");
             post_event(OMX_EventError,OMX_ErrorInvalidState,\
                     OMX_COMPONENT_GENERATE_EVENT);
@@ -1420,7 +1420,7 @@ bool omx_video::post_event(unsigned int p1,
    Error None if successful.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::get_parameter(OMX_IN OMX_HANDLETYPE     hComp,
+OMX_ERRORTYPE  omx_video::get_parameter(OMX_IN OMX_HANDLETYPE     hComp __unused,
         OMX_IN OMX_INDEXTYPE paramIndex,
         OMX_INOUT OMX_PTR     paramData)
 {
@@ -1882,7 +1882,7 @@ OMX_ERRORTYPE  omx_video::get_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                     reinterpret_cast<OMX_QCOM_VIDEO_PARAM_PEAK_BITRATE*>(paramData);
                 DEBUG_PRINT_LOW("get_parameter: OMX_QcomIndexParamPeakBitrate");
                 if (!dev_get_peak_bitrate(&peakbitrate)) {
-                    DEBUG_PRINT_ERROR("Invalid entry returned from get_peak_bitrate %d",
+                    DEBUG_PRINT_ERROR("Invalid entry returned from get_peak_bitrate %lu",
                         pParam->nPeakBitrate);
                 } else {
                     pParam->nPeakBitrate = peakbitrate;
@@ -1924,7 +1924,7 @@ OMX_ERRORTYPE  omx_video::get_parameter(OMX_IN OMX_HANDLETYPE     hComp,
    OMX Error None if successful.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::get_config(OMX_IN OMX_HANDLETYPE      hComp,
+OMX_ERRORTYPE  omx_video::get_config(OMX_IN OMX_HANDLETYPE      hComp __unused,
         OMX_IN OMX_INDEXTYPE configIndex,
         OMX_INOUT OMX_PTR     configData)
 {
@@ -1998,10 +1998,19 @@ OMX_ERRORTYPE  omx_video::get_config(OMX_IN OMX_HANDLETYPE      hComp,
        case OMX_IndexConfigVideoVp8ReferenceFrame:
            {
                 VALIDATE_OMX_PARAM_DATA(configData, OMX_VIDEO_VP8REFERENCEFRAMETYPE);
-               OMX_VIDEO_VP8REFERENCEFRAMETYPE* pParam =
+                OMX_VIDEO_VP8REFERENCEFRAMETYPE* pParam =
                    reinterpret_cast<OMX_VIDEO_VP8REFERENCEFRAMETYPE*>(configData);
                DEBUG_PRINT_LOW("get_config: OMX_IndexConfigVideoVp8ReferenceFrame");
                memcpy(pParam, &m_sConfigVp8ReferenceFrame, sizeof(m_sConfigVp8ReferenceFrame));
+               break;
+           }
+       case OMX_IndexConfigAndroidIntraRefresh:
+           {
+                VALIDATE_OMX_PARAM_DATA(configData, OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE);
+                OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE* pParam =
+                    reinterpret_cast<OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE*>(configData);
+               DEBUG_PRINT_LOW("get_config: OMX_IndexConfigAndroidIntraRefresh");
+               memcpy(pParam, &m_sConfigIntraRefresh, sizeof(m_sConfigIntraRefresh));
                break;
            }
         default:
@@ -2011,6 +2020,8 @@ OMX_ERRORTYPE  omx_video::get_config(OMX_IN OMX_HANDLETYPE      hComp,
     return OMX_ErrorNone;
 
 }
+
+#define extn_equals(param, extn) (!strcmp(param, extn))
 
 /* ======================================================================
    FUNCTION
@@ -2026,7 +2037,7 @@ OMX_ERRORTYPE  omx_video::get_config(OMX_IN OMX_HANDLETYPE      hComp,
    OMX Error None if everything successful.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::get_extension_index(OMX_IN OMX_HANDLETYPE      hComp,
+OMX_ERRORTYPE  omx_video::get_extension_index(OMX_IN OMX_HANDLETYPE      hComp __unused,
         OMX_IN OMX_STRING      paramName,
         OMX_OUT OMX_INDEXTYPE* indexType)
 {
@@ -2035,21 +2046,18 @@ OMX_ERRORTYPE  omx_video::get_extension_index(OMX_IN OMX_HANDLETYPE      hComp,
         return OMX_ErrorInvalidState;
     }
 #ifdef MAX_RES_1080P
-    if (!strncmp(paramName, "OMX.QCOM.index.param.SliceDeliveryMode",
-            sizeof("OMX.QCOM.index.param.SliceDeliveryMode") - 1)) {
+    if (extn_equals(paramName, "OMX.QCOM.index.param.SliceDeliveryMode")) {
         *indexType = (OMX_INDEXTYPE)OMX_QcomIndexEnableSliceDeliveryMode;
         return OMX_ErrorNone;
     }
 #endif
 #ifdef _ANDROID_ICS_
-    if (!strncmp(paramName, "OMX.google.android.index.storeMetaDataInBuffers",
-            sizeof("OMX.google.android.index.storeMetaDataInBuffers") - 1)) {
+    if (extn_equals(paramName, "OMX.google.android.index.storeMetaDataInBuffers")) {
         *indexType = (OMX_INDEXTYPE)OMX_QcomIndexParamVideoMetaBufferMode;
         return OMX_ErrorNone;
     }
 #endif
-    if (!strncmp(paramName, "OMX.google.android.index.prependSPSPPSToIDRFrames",
-            sizeof("OMX.google.android.index.prependSPSPPSToIDRFrames") - 1)) {
+    if (extn_equals(paramName, "OMX.google.android.index.prependSPSPPSToIDRFrames")) {
         *indexType = (OMX_INDEXTYPE)OMX_QcomIndexParamSequenceHeaderWithIDR;
         return OMX_ErrorNone;
     }
@@ -2069,7 +2077,7 @@ OMX_ERRORTYPE  omx_video::get_extension_index(OMX_IN OMX_HANDLETYPE      hComp,
    RETURN VALUE
    Error None if everything is successful.
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::get_state(OMX_IN OMX_HANDLETYPE  hComp,
+OMX_ERRORTYPE  omx_video::get_state(OMX_IN OMX_HANDLETYPE  hComp __unused,
         OMX_OUT OMX_STATETYPE* state)
 {
     *state = m_state;
@@ -2091,11 +2099,11 @@ OMX_ERRORTYPE  omx_video::get_state(OMX_IN OMX_HANDLETYPE  hComp,
    OMX Error None if everything successful.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::component_tunnel_request(OMX_IN OMX_HANDLETYPE                hComp,
-        OMX_IN OMX_U32                        port,
-        OMX_IN OMX_HANDLETYPE        peerComponent,
-        OMX_IN OMX_U32                    peerPort,
-        OMX_INOUT OMX_TUNNELSETUPTYPE* tunnelSetup)
+OMX_ERRORTYPE  omx_video::component_tunnel_request(OMX_IN OMX_HANDLETYPE                hComp __unused,
+        OMX_IN OMX_U32                        port __unused,
+        OMX_IN OMX_HANDLETYPE        peerComponent __unused,
+        OMX_IN OMX_U32                    peerPort __unused,
+        OMX_INOUT OMX_TUNNELSETUPTYPE* tunnelSetup __unused)
 {
     DEBUG_PRINT_ERROR("ERROR: component_tunnel_request Not Implemented");
     return OMX_ErrorNotImplemented;
@@ -2116,7 +2124,7 @@ OMX_ERRORTYPE  omx_video::component_tunnel_request(OMX_IN OMX_HANDLETYPE        
 
    ========================================================================== */
 OMX_ERRORTYPE  omx_video::use_input_buffer(
-        OMX_IN OMX_HANDLETYPE            hComp,
+        OMX_IN OMX_HANDLETYPE            hComp __unused,
         OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
         OMX_IN OMX_U32                   port,
         OMX_IN OMX_PTR                   appData,
@@ -2284,9 +2292,9 @@ OMX_ERRORTYPE  omx_video::use_input_buffer(
 
    ========================================================================== */
 OMX_ERRORTYPE  omx_video::use_output_buffer(
-        OMX_IN OMX_HANDLETYPE            hComp,
+        OMX_IN OMX_HANDLETYPE            hComp __unused,
         OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-        OMX_IN OMX_U32                   port,
+        OMX_IN OMX_U32                   port __unused,
         OMX_IN OMX_PTR                   appData,
         OMX_IN OMX_U32                   bytes,
         OMX_IN OMX_U8*                   buffer)
@@ -2727,9 +2735,9 @@ OMX_ERRORTYPE omx_video::allocate_input_meta_buffer(
 
    ========================================================================== */
 OMX_ERRORTYPE  omx_video::allocate_input_buffer(
-        OMX_IN OMX_HANDLETYPE            hComp,
+        OMX_IN OMX_HANDLETYPE            hComp __unused,
         OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-        OMX_IN OMX_U32                   port,
+        OMX_IN OMX_U32                   port __unused,
         OMX_IN OMX_PTR                   appData,
         OMX_IN OMX_U32                   bytes)
 {
@@ -2883,9 +2891,9 @@ OMX_ERRORTYPE  omx_video::allocate_input_buffer(
 
    ========================================================================== */
 OMX_ERRORTYPE  omx_video::allocate_output_buffer(
-        OMX_IN OMX_HANDLETYPE            hComp,
+        OMX_IN OMX_HANDLETYPE            hComp __unused,
         OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-        OMX_IN OMX_U32                   port,
+        OMX_IN OMX_U32                   port __unused,
         OMX_IN OMX_PTR                   appData,
         OMX_IN OMX_U32                   bytes)
 {
@@ -3152,7 +3160,7 @@ OMX_ERRORTYPE  omx_video::allocate_buffer(OMX_IN OMX_HANDLETYPE                h
    true/false
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::free_buffer(OMX_IN OMX_HANDLETYPE         hComp,
+OMX_ERRORTYPE  omx_video::free_buffer(OMX_IN OMX_HANDLETYPE         hComp __unused,
         OMX_IN OMX_U32                 port,
         OMX_IN OMX_BUFFERHEADERTYPE* buffer)
 {
@@ -3377,7 +3385,7 @@ OMX_ERRORTYPE  omx_video::empty_this_buffer(OMX_IN OMX_HANDLETYPE         hComp,
    OMX Error None if everything went successful.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::empty_this_buffer_proxy(OMX_IN OMX_HANDLETYPE         hComp,
+OMX_ERRORTYPE  omx_video::empty_this_buffer_proxy(OMX_IN OMX_HANDLETYPE         hComp __unused,
         OMX_IN OMX_BUFFERHEADERTYPE* buffer)
 {
     OMX_U8 *pmem_data_buf = NULL;
@@ -3407,7 +3415,7 @@ OMX_ERRORTYPE  omx_video::empty_this_buffer_proxy(OMX_IN OMX_HANDLETYPE         
         media_buffer = (LEGACY_CAM_METADATA_TYPE *)meta_buffer_hdr[nBufIndex].pBuffer;
         if ((media_buffer->buffer_type == LEGACY_CAM_SOURCE)
                 && buffer->nAllocLen != sizeof(LEGACY_CAM_METADATA_TYPE)) {
-            DEBUG_PRINT_ERROR("Invalid metadata size expected(%u) v/s recieved(%zu)",
+            DEBUG_PRINT_ERROR("Invalid metadata size expected(%lu) v/s recieved(%zu)",
                     buffer->nAllocLen, sizeof(LEGACY_CAM_METADATA_TYPE));
             met_error = true;
         } else if (media_buffer) {
@@ -3606,7 +3614,7 @@ OMX_ERRORTYPE  omx_video::fill_this_buffer(OMX_IN OMX_HANDLETYPE  hComp,
 
    ========================================================================== */
 OMX_ERRORTYPE  omx_video::fill_this_buffer_proxy(
-        OMX_IN OMX_HANDLETYPE        hComp,
+        OMX_IN OMX_HANDLETYPE        hComp __unused,
         OMX_IN OMX_BUFFERHEADERTYPE* bufferAdd)
 {
     OMX_U8 *pmem_data_buf = NULL;
@@ -3657,7 +3665,7 @@ OMX_ERRORTYPE  omx_video::fill_this_buffer_proxy(
    OMX Error None if everything successful.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::set_callbacks(OMX_IN OMX_HANDLETYPE        hComp,
+OMX_ERRORTYPE  omx_video::set_callbacks(OMX_IN OMX_HANDLETYPE        hComp __unused,
         OMX_IN OMX_CALLBACKTYPE* callbacks,
         OMX_IN OMX_PTR             appData)
 {
@@ -3684,11 +3692,11 @@ OMX_ERRORTYPE  omx_video::set_callbacks(OMX_IN OMX_HANDLETYPE        hComp,
    Not Implemented error.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::use_EGL_image(OMX_IN OMX_HANDLETYPE                hComp,
-        OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr,
-        OMX_IN OMX_U32                        port,
-        OMX_IN OMX_PTR                     appData,
-        OMX_IN void*                      eglImage)
+OMX_ERRORTYPE  omx_video::use_EGL_image(OMX_IN OMX_HANDLETYPE                hComp __unused,
+        OMX_INOUT OMX_BUFFERHEADERTYPE** bufferHdr __unused,
+        OMX_IN OMX_U32                        port __unused,
+        OMX_IN OMX_PTR                     appData __unused,
+        OMX_IN void*                      eglImage __unused)
 {
     DEBUG_PRINT_ERROR("ERROR: use_EGL_image:  Not Implemented");
     return OMX_ErrorNotImplemented;
@@ -3707,7 +3715,7 @@ OMX_ERRORTYPE  omx_video::use_EGL_image(OMX_IN OMX_HANDLETYPE                hCo
    RETURN VALUE
    OMX Error None if everything is successful.
    ========================================================================== */
-OMX_ERRORTYPE  omx_video::component_role_enum(OMX_IN OMX_HANDLETYPE hComp,
+OMX_ERRORTYPE  omx_video::component_role_enum(OMX_IN OMX_HANDLETYPE hComp __unused,
         OMX_OUT OMX_U8*        role,
         OMX_IN OMX_U32        index)
 {
@@ -4252,7 +4260,7 @@ OMX_ERRORTYPE omx_video::get_supported_profile_level(OMX_VIDEO_PARAM_PROFILELEVE
                 profileLevelType->eLevel   = OMX_VIDEO_AVCLevel4;
 #endif
             } else {
-                DEBUG_PRINT_LOW("get_parameter: OMX_IndexParamVideoProfileLevelQuerySupported nProfileIndex ret NoMore %d",
+                DEBUG_PRINT_LOW("get_parameter: OMX_IndexParamVideoProfileLevelQuerySupported nProfileIndex ret NoMore %lu",
                         profileLevelType->nProfileIndex);
                 eRet = OMX_ErrorNoMore;
             }
@@ -4583,7 +4591,7 @@ OMX_ERRORTYPE  omx_video::empty_this_buffer_opaque(OMX_IN OMX_HANDLETYPE hComp,
     media_buffer = (VideoGrallocMetadata *)buffer->pBuffer;
     if ((media_buffer->eType == LEGACY_CAM_SOURCE)
             && buffer->nAllocLen != sizeof(LEGACY_CAM_METADATA_TYPE)) {
-        DEBUG_PRINT_ERROR("Invalid metadata size expected(%u) v/s recieved(%zu)",
+        DEBUG_PRINT_ERROR("Invalid metadata size expected(%lu) v/s recieved(%zu)",
                 buffer->nAllocLen, sizeof(LEGACY_CAM_METADATA_TYPE));
         return OMX_ErrorBadParameter;
     }

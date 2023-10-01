@@ -240,6 +240,10 @@ OMX_ERRORTYPE omx_venc::component_init(OMX_STRING role)
     m_sIntraRefresh.nPortIndex = (OMX_U32) PORT_INDEX_OUT;
     m_sIntraRefresh.eRefreshMode = OMX_VIDEO_IntraRefreshMax;
 
+    OMX_INIT_STRUCT(&m_sConfigIntraRefresh, OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE);
+    m_sConfigIntraRefresh.nPortIndex = (OMX_U32) PORT_INDEX_OUT;
+    m_sConfigIntraRefresh.nRefreshPeriod = 0;
+
     if (codec_type == OMX_VIDEO_CodingMPEG4) {
         m_sParamProfileLevel.eProfile = (OMX_U32) OMX_VIDEO_MPEG4ProfileSimple;
         m_sParamProfileLevel.eLevel = (OMX_U32) OMX_VIDEO_MPEG4Level0;
@@ -481,7 +485,7 @@ OMX_ERRORTYPE omx_venc::component_init(OMX_STRING role)
    OMX Error None if successful.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_venc::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
+OMX_ERRORTYPE  omx_venc::set_parameter(OMX_IN OMX_HANDLETYPE     hComp __unused,
         OMX_IN OMX_INDEXTYPE paramIndex,
         OMX_IN OMX_PTR        paramData)
 {
@@ -530,7 +534,7 @@ OMX_ERRORTYPE  omx_venc::set_parameter(OMX_IN OMX_HANDLETYPE     hComp,
                     DEBUG_PRINT_LOW("i/p buffersize requested = %lu", portDefn->nBufferSize);
 
                     if (portDefn->nBufferCountActual > MAX_NUM_INPUT_BUFFERS) {
-                        DEBUG_PRINT_ERROR("ERROR: (In_PORT) actual count (%lu) exceeds max(%lu)",
+                        DEBUG_PRINT_ERROR("ERROR: (In_PORT) actual count (%u) exceeds max(%u)",
                                              (unsigned int)portDefn->nBufferCountActual, (unsigned int)MAX_NUM_INPUT_BUFFERS);
                         return OMX_ErrorUnsupportedSetting;
                     }
@@ -1418,7 +1422,7 @@ bool omx_venc::update_profile_level()
    RETURN VALUE
    OMX Error None if successful.
    ========================================================================== */
-OMX_ERRORTYPE  omx_venc::set_config(OMX_IN OMX_HANDLETYPE      hComp,
+OMX_ERRORTYPE  omx_venc::set_config(OMX_IN OMX_HANDLETYPE      hComp __unused,
         OMX_IN OMX_INDEXTYPE configIndex,
         OMX_IN OMX_PTR        configData)
 {
@@ -1519,7 +1523,7 @@ OMX_ERRORTYPE  omx_venc::set_config(OMX_IN OMX_HANDLETYPE      hComp,
                     } else {
                         m_sParamAVC.nPFrames = pParam->nPFrames;
                         if ((m_sParamAVC.eProfile != OMX_VIDEO_AVCProfileBaseline) &&
-                            (m_sParamAVC.eProfile != QOMX_VIDEO_AVCProfileConstrainedBaseline))
+                            (m_sParamAVC.eProfile != (OMX_VIDEO_AVCPROFILETYPE)QOMX_VIDEO_AVCProfileConstrainedBaseline))
                             m_sParamAVC.nBFrames = pParam->nBFrames;
                         else
                             m_sParamAVC.nBFrames = 0;
@@ -1705,6 +1709,25 @@ OMX_ERRORTYPE  omx_venc::set_config(OMX_IN OMX_HANDLETYPE      hComp,
                 }
                 break;
             }
+        case OMX_IndexConfigAndroidIntraRefresh:
+            {
+                VALIDATE_OMX_PARAM_DATA(configData, OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE);
+                OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE* pParam =
+                (OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE*) configData;
+                if (m_state == OMX_StateLoaded
+                        || m_sInPortDef.bEnabled == OMX_FALSE
+                        || m_sOutPortDef.bEnabled == OMX_FALSE) {
+                    if (!handle->venc_set_config(configData, (OMX_INDEXTYPE)OMX_IndexConfigAndroidIntraRefresh)) {
+                        DEBUG_PRINT_ERROR("Failed to set OMX_IndexConfigVideoIntraRefreshType");
+                        return OMX_ErrorUnsupportedSetting;
+                    }
+                    m_sConfigIntraRefresh.nRefreshPeriod = pParam->nRefreshPeriod;
+               } else {
+                    DEBUG_PRINT_ERROR("ERROR: Setting OMX_IndexConfigAndroidIntraRefresh supported only at start of session");
+                    return OMX_ErrorUnsupportedSetting;
+                }
+               break;
+           }
         default:
             DEBUG_PRINT_ERROR("ERROR: unsupported index %d", (int) configIndex);
             break;
@@ -1727,7 +1750,7 @@ OMX_ERRORTYPE  omx_venc::set_config(OMX_IN OMX_HANDLETYPE      hComp,
    OMX Error None if everything successful.
 
    ========================================================================== */
-OMX_ERRORTYPE  omx_venc::component_deinit(OMX_IN OMX_HANDLETYPE hComp)
+OMX_ERRORTYPE  omx_venc::component_deinit(OMX_IN OMX_HANDLETYPE hComp __unused)
 {
     OMX_U32 i = 0;
     DEBUG_PRINT_HIGH("omx_venc(): Inside component_deinit()");
@@ -1862,15 +1885,20 @@ bool omx_venc::dev_get_seq_hdr(void *buffer, unsigned size, unsigned *hdrlen)
     return handle->venc_get_seq_hdr(buffer, size, hdrlen);
 }
 
-bool omx_venc::dev_get_capability_ltrcount(OMX_U32 *min, OMX_U32 *max, OMX_U32 *step_size)
-{
 #ifdef _MSM8974_
+bool omx_venc::dev_get_capability_ltrcount(OMX_U32 *min __unused,
+					   OMX_U32 *max __unused,
+					   OMX_U32 *step_size __unused)
+{
     DEBUG_PRINT_ERROR("Get Capability LTR Count is not supported");
     return false;
-#else
-    return handle->venc_get_capability_ltrcount(min, max, step_size);
-#endif
 }
+#else
+bool omx_venc::dev_get_capability_ltrcount(OMX_U32 *min, OMX_U32 *max, OMX_U32 *step_size)
+{
+    return handle->venc_get_capability_ltrcount(min, max, step_size);
+}
+#endif
 
 bool omx_venc::dev_get_performance_level(OMX_U32 *perflevel)
 {
@@ -2096,7 +2124,7 @@ int omx_venc::async_message_process (void *context, void* message)
             break;
 #endif
         default:
-            DEBUG_PRINT_HIGH("Unknown msg received : %d", m_sVenc_msg->msgcode);
+            DEBUG_PRINT_HIGH("Unknown msg received : %lu", m_sVenc_msg->msgcode);
             break;
     }
     return 0;
