@@ -1554,7 +1554,7 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
                     //For Blit, the app layers should be released when the Blit
                     //is complete. This fd was passed from copybit->draw
                     list->hwLayers[i].releaseFenceFd = dup(fd);
-                } else 
+                } else
 #endif
                 {
                     list->hwLayers[i].releaseFenceFd = dup(releaseFd);
