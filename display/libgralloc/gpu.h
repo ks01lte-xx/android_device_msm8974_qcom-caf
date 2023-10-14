@@ -24,7 +24,6 @@
 #include <string.h>
 
 #include <log/log.h>
-#include <cutils/ashmem.h>
 
 #include "gralloc_priv.h"
 #include "fb_priv.h"
