@@ -1981,7 +1981,7 @@ bool venc_dev::venc_set_config(void *configData, OMX_INDEXTYPE index)
         case OMX_IndexConfigAndroidIntraRefresh:
             {
                 OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE *intra_refresh = (OMX_VIDEO_CONFIG_ANDROID_INTRAREFRESHTYPE *)configData;
-                DEBUG_PRINT_LOW("OMX_IndexConfigAndroidIntraRefresh : num frames = %d", intra_refresh->nRefreshPeriod);
+                DEBUG_PRINT_LOW("OMX_IndexConfigAndroidIntraRefresh : num frames = %lu", intra_refresh->nRefreshPeriod);
 
                 if (intra_refresh->nPortIndex == (OMX_U32) PORT_INDEX_OUT) {
                     OMX_U32 num_mbs_per_frame = (ALIGN(m_sVenc_cfg.dvs_height, 16)/16) * (ALIGN(m_sVenc_cfg.dvs_width, 16)/16);

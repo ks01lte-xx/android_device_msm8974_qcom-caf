@@ -838,7 +838,7 @@ void omx_qcelp13_aenc::process_command_msg(void *client_data, unsigned char id)
                                          pThis->m_app_data,
                                          OMX_EventError,
                                          p2,
-                                         NULL,
+                                         0,
                                          NULL );
             } else
             {
